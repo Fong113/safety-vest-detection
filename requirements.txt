@@ -3,3 +3,5 @@ streamlit
 ultralytics
 numpy
 opencv-python-headless
+cv2
+PIL
