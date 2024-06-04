@@ -1,70 +1,56 @@
 import streamlit as st
-import cv2
 import numpy as np
 from ultralytics import YOLO
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+import av
 
 # Load the YOLOv8 model
 model = YOLO("best.pt")
 
-def predict(image):
-    # Convert image to numpy array
-    image_np = np.array(image)
-    # Make predictions
-    results = model(image_np)
-    return results
+class VideoProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.model = model
 
-def draw_boxes(image, results):
-    for result in results:
-        for box in result.boxes:
-            x1, y1, x2, y2 = box.xyxy[0]
-            conf = box.conf[0]
-            cls = box.cls[0]
-            label = model.names[int(cls)]
-            # Draw rectangle
-            cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-            # Draw label
-            cv2.putText(image, f'{label} {conf:.2f}', (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-    return image
+    def recv(self, frame):
+        image = frame.to_ndarray(format="bgr24")
+        
+        # Predict
+        results = self.model(image)
+        image = self.draw_boxes(image, results)
+        
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
+
+    def draw_boxes(self, image, results):
+        image_pil = Image.fromarray(image)
+        draw = ImageDraw.Draw(image_pil)
+        font = ImageFont.load_default()
+        for result in results:
+            for box in result.boxes:
+                x1, y1, x2, y2 = box.xyxy[0]
+                conf = box.conf[0]
+                cls = box.cls[0]
+                label = self.model.names[int(cls)]
+                # Draw rectangle
+                draw.rectangle([x1, y1, x2, y2], outline="green", width=2)
+                # Draw label
+                text = f"{label} {conf:.2f}"
+                text_size = draw.textbbox((0, 0), text, font=font)
+                draw.rectangle([x1, y1 - text_size[3], x1 + text_size[2], y1], fill="green")
+                draw.text((x1, y1 - text_size[3]), text, fill="white", font=font)
+        return np.array(image_pil)
 
 def run_webcam_detection():
     st.title("YOLOv8 Object Detection with Webcam")
-    st.write("Click the button below to start or stop the webcam.")
+    st.write("Click the button below to start the webcam.")
 
-    if 'run' not in st.session_state:
-        st.session_state.run = False
-
-    start_button = st.button("Start Webcam")
-    stop_button = st.button("Stop Webcam")
-
-    if start_button:
-        st.session_state.run = True
-
-    if stop_button:
-        st.session_state.run = False
-
-    stframe = st.empty()
-
-    cap = None
-    if st.session_state.run:
-        cap = cv2.VideoCapture(0)
-
-    while st.session_state.run:
-        ret, frame = cap.read()
-        if not ret:
-            st.session_state.run = False
-            break
-
-        # Predict
-        results = predict(frame)
-        frame = draw_boxes(frame, results)
-
-        # Convert the frame to RGB
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        stframe.image(frame, channels="RGB", use_column_width=True)
-
-    if cap is not None:
-        cap.release()
+    webrtc_ctx = webrtc_streamer(
+        key="example",
+        mode=WebRtcMode.SENDRECV,
+        video_processor_factory=VideoProcessor,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
 
 run_webcam_detection()
 
@@ -76,9 +62,27 @@ if uploaded_file is not None:
     st.write("")
 
     # Predict
-    results = predict(image)
+    results = model(np.array(image))
     image_np = np.array(image)
-    image_np = draw_boxes(image_np, results)
+    
+    # Draw boxes using Pillow
+    image_pil = Image.fromarray(image_np)
+    draw = ImageDraw.Draw(image_pil)
+    font = ImageFont.load_default()
+    for result in results:
+        for box in result.boxes:
+            x1, y1, x2, y2 = box.xyxy[0]
+            conf = box.conf[0]
+            cls = box.cls[0]
+            label = model.names[int(cls)]
+            # Draw rectangle
+            draw.rectangle([x1, y1, x2, y2], outline="green", width=2)
+            # Draw label
+            text = f"{label} {conf:.2f}"
+            text_size = draw.textbbox((0, 0), text, font=font)
+            draw.rectangle([x1, y1 - text_size[3], x1 + text_size[2], y1], fill="green")
+            draw.text((x1, y1 - text_size[3]), text, fill="white", font=font)
+    image_np = np.array(image_pil)
     
     # Display the output image with bounding boxes
     st.image(image_np, caption='Detected Image.', use_column_width=True)
