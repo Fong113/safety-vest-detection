@@ -1,7 +1,4 @@
-torch
 streamlit
 ultralytics
 numpy
-opencv-python-headless
-cv2
-PIL
+opencv_python
