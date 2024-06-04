@@ -1,5 +1,6 @@
 streamlit
+streamlit-webrtc
 ultralytics
+pillow
+av
 numpy
-opencv_python
-streamlit_webrtc
